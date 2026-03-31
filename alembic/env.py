@@ -1,9 +1,5 @@
 import asyncio
-import os
 from logging.config import fileConfig
-from dotenv import load_dotenv
-
-load_dotenv()
 
 from alembic import context
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -15,6 +11,8 @@ import app.models.group  # noqa: F401
 import app.models.expense  # noqa: F401
 import app.models.settlement  # noqa: F401
 
+from app.core.config import settings
+
 config = context.config
 
 # Interpret the config file for Python logging
@@ -24,18 +22,9 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 
-def get_url() -> str:
-    user = os.environ.get("user", "postgres")
-    password = os.environ.get("password", "")
-    host = os.environ.get("host", "localhost")
-    port = os.environ.get("port", "5432")
-    dbname = os.environ.get("dbname", "postgres")
-    return f"postgresql+asyncpg://{user}:{password}@{host}:{port}/{dbname}"
-
-
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""
-    url = get_url()
+    url = settings.database_url
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -54,8 +43,7 @@ def do_run_migrations(connection) -> None:
 
 async def run_async_migrations() -> None:
     """Run migrations in 'online' mode with async engine."""
-    url = get_url()
-    connectable = create_async_engine(url)
+    connectable = create_async_engine(settings.database_url)
 
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
