@@ -56,7 +56,6 @@ async def get_current_user(
         raise HTTPException(status_code=401, detail="Not authenticated")
 
     claims = await verify_clerk_token(token)
-    print("Clerk JWT claims:", claims)
 
     external_subject: str = claims["sub"]
     email: str = claims.get("email", "")
