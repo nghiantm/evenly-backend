@@ -1,0 +1,104 @@
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Any, Dict, List, Optional
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, field_validator
+
+
+class ExpensePayerInput(BaseModel):
+    userId: UUID
+    amount: Decimal
+
+
+class ExpenseSplitInput(BaseModel):
+    userId: UUID
+    amountOwed: Decimal
+    splitType: str = "EXACT"
+    shares: Optional[Decimal] = None
+    percentage: Optional[Decimal] = None
+
+    @field_validator("splitType")
+    @classmethod
+    def validate_split_type(cls, v: str) -> str:
+        allowed = {"EQUAL", "EXACT", "PERCENT", "SHARE"}
+        if v not in allowed:
+            raise ValueError(f"splitType must be one of {allowed}")
+        return v
+
+
+class CreateExpenseRequest(BaseModel):
+    groupId: UUID
+    description: str
+    currency: str = "USD"
+    totalAmount: Decimal
+    expenseDate: date
+    note: Optional[str] = None
+    paidBy: List[ExpensePayerInput]
+    splits: List[ExpenseSplitInput]
+
+
+class UpdateExpenseRequest(BaseModel):
+    description: Optional[str] = None
+    currency: Optional[str] = None
+    totalAmount: Optional[Decimal] = None
+    expenseDate: Optional[date] = None
+    note: Optional[str] = None
+    paidBy: Optional[List[ExpensePayerInput]] = None
+    splits: Optional[List[ExpenseSplitInput]] = None
+
+
+class ExpenseResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    expenseId: UUID
+    groupId: UUID
+    description: str
+    currency: str
+    totalAmount: Decimal
+    expenseDate: date
+    note: Optional[str] = None
+    createdBy: UUID
+    paidBy: List[Dict[str, Any]] = []
+    splits: List[Dict[str, Any]] = []
+    createdAt: datetime
+    updatedAt: datetime
+
+    @classmethod
+    def from_orm_model(cls, expense) -> "ExpenseResponse":
+        paid_by = [
+            {"userId": str(p.payer_id), "amount": float(p.amount)}
+            for p in expense.payments
+        ]
+        splits = [
+            {
+                "userId": str(s.user_id),
+                "amountOwed": float(s.amount_owed),
+                "splitType": s.split_type,
+                "shares": float(s.shares) if s.shares is not None else None,
+                "percentage": float(s.percentage) if s.percentage is not None else None,
+            }
+            for s in expense.splits
+        ]
+        return cls(
+            expenseId=expense.id,
+            groupId=expense.group_id,
+            description=expense.description,
+            currency=expense.currency,
+            totalAmount=expense.total_amount,
+            expenseDate=expense.expense_date,
+            note=expense.note,
+            createdBy=expense.created_by,
+            paidBy=paid_by,
+            splits=splits,
+            createdAt=expense.created_at,
+            updatedAt=expense.updated_at,
+        )
+
+
+class ExpenseListResponse(BaseModel):
+    expenses: List[ExpenseResponse]
+    total: int
+    page: int
+    pageSize: int
+    totalPages: int
