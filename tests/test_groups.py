@@ -155,6 +155,150 @@ async def test_add_and_remove_member(auth_client, owner_user):
     assert remove_resp.status_code == 204
 
 
+_DEBTOR_ID = uuid.UUID("bbbbbbbb-0000-0000-0000-000000000003")
+
+
+async def _ensure_user(user):
+    async with TestSessionLocal() as session:
+        result = await session.execute(
+            select(type(user)).where(type(user).id == user.id)
+        )
+        if result.scalar_one_or_none() is None:
+            session.add(user)
+            await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_remove_member_with_unsettled_balance_rejected(auth_client, owner_user):
+    """Removing a member who owes money should return 400."""
+    debtor = make_user(
+        user_id=_DEBTOR_ID,
+        external_subject="debtor_001",
+        email="debtor001@example.com",
+        display_name="Debtor",
+    )
+    await _ensure_user(debtor)
+
+    # Create group and add debtor
+    create_resp = await auth_client.post("/groups", json={"name": "Balance Guard Group"})
+    assert create_resp.status_code == 201
+    group_id = create_resp.json()["groupId"]
+
+    add_resp = await auth_client.post(
+        f"/groups/{group_id}/members",
+        json={"userId": str(debtor.id)},
+    )
+    assert add_resp.status_code == 201
+
+    # Owner pays 90, split equally → debtor owes 45
+    expense_resp = await auth_client.post(
+        f"/groups/{group_id}/expenses",
+        json={
+            "groupId": group_id,
+            "description": "Dinner",
+            "currency": "USD",
+            "totalAmount": 90.00,
+            "expenseDate": "2024-06-01",
+            "paidBy": [{"userId": str(owner_user.id), "amount": 90.00}],
+            "splits": [
+                {"userId": str(owner_user.id), "amountOwed": 45.00, "splitType": "EXACT"},
+                {"userId": str(debtor.id), "amountOwed": 45.00, "splitType": "EXACT"},
+            ],
+        },
+    )
+    assert expense_resp.status_code == 201
+
+    # Attempt to remove the debtor — should be rejected
+    remove_resp = await auth_client.delete(
+        f"/groups/{group_id}/members/{debtor.id}"
+    )
+    assert remove_resp.status_code == 400
+    assert "unsettled balance" in remove_resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_remove_member_after_settling_balance_allowed(auth_client, owner_user):
+    """Removing a member whose balance is zero should succeed."""
+    debtor = make_user(
+        user_id=_DEBTOR_ID,
+        external_subject="debtor_001",
+        email="debtor001@example.com",
+        display_name="Debtor",
+    )
+    await _ensure_user(debtor)
+
+    create_resp = await auth_client.post("/groups", json={"name": "Settled Group"})
+    assert create_resp.status_code == 201
+    group_id = create_resp.json()["groupId"]
+
+    await auth_client.post(
+        f"/groups/{group_id}/members",
+        json={"userId": str(debtor.id)},
+    )
+
+    # Create expense so debtor owes 45
+    await auth_client.post(
+        f"/groups/{group_id}/expenses",
+        json={
+            "groupId": group_id,
+            "description": "Groceries",
+            "currency": "USD",
+            "totalAmount": 90.00,
+            "expenseDate": "2024-06-01",
+            "paidBy": [{"userId": str(owner_user.id), "amount": 90.00}],
+            "splits": [
+                {"userId": str(owner_user.id), "amountOwed": 45.00, "splitType": "EXACT"},
+                {"userId": str(debtor.id), "amountOwed": 45.00, "splitType": "EXACT"},
+            ],
+        },
+    )
+
+    # Settle the debt
+    settle_resp = await auth_client.post(
+        f"/groups/{group_id}/settlements",
+        json={
+            "fromUserId": str(debtor.id),
+            "toUserId": str(owner_user.id),
+            "currency": "USD",
+            "amount": 45.00,
+            "settlementDate": "2024-06-02",
+        },
+    )
+    assert settle_resp.status_code == 201
+
+    # Now removal should succeed
+    remove_resp = await auth_client.delete(
+        f"/groups/{group_id}/members/{debtor.id}"
+    )
+    assert remove_resp.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_remove_member_no_expenses_allowed(auth_client, owner_user):
+    """Removing a member with zero balance (no expenses) should succeed."""
+    debtor = make_user(
+        user_id=_DEBTOR_ID,
+        external_subject="debtor_001",
+        email="debtor001@example.com",
+        display_name="Debtor",
+    )
+    await _ensure_user(debtor)
+
+    create_resp = await auth_client.post("/groups", json={"name": "Clean Group"})
+    assert create_resp.status_code == 201
+    group_id = create_resp.json()["groupId"]
+
+    await auth_client.post(
+        f"/groups/{group_id}/members",
+        json={"userId": str(debtor.id)},
+    )
+
+    remove_resp = await auth_client.delete(
+        f"/groups/{group_id}/members/{debtor.id}"
+    )
+    assert remove_resp.status_code == 204
+
+
 @pytest.mark.asyncio
 async def test_archive_group(auth_client, owner_user):
     create_resp = await auth_client.post("/groups", json={"name": "To Be Archived"})
