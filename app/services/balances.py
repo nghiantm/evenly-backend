@@ -15,17 +15,21 @@ from app.schemas.balance import GroupBalanceResponse, MyBalancesResponse, Pairwi
 async def get_group_balances(
     db: AsyncSession,
     group_id: UUID,
-    currency: str = "USD",
 ) -> GroupBalanceResponse:
     """
     Calculate balances from GroupTransfer records.
     from_user_id is debtor, to_user_id is creditor.
     Net for user X = SUM(amount where to_user=X) - SUM(amount where from_user=X)
+    All transfers are stored in the group's defaultCurrency.
     """
+    from app.models.group import Group
+    group_result = await db.execute(select(Group).where(Group.id == group_id))
+    group = group_result.scalar_one_or_none()
+    currency = group.default_currency if group else "USD"
+
     result = await db.execute(
         select(GroupTransfer)
         .where(GroupTransfer.group_id == group_id)
-        .where(GroupTransfer.currency == currency)
     )
     transfers = result.scalars().all()
 
@@ -98,13 +102,11 @@ async def get_member_balance(
     db: AsyncSession,
     group_id: UUID,
     user_id: UUID,
-    currency: str = "USD",
 ) -> Decimal:
-    """Return net balance for a specific user in a group."""
+    """Return net balance for a specific user in a group (in group's defaultCurrency)."""
     result = await db.execute(
         select(GroupTransfer)
         .where(GroupTransfer.group_id == group_id)
-        .where(GroupTransfer.currency == currency)
         .where(
             (GroupTransfer.from_user_id == user_id)
             | (GroupTransfer.to_user_id == user_id)
@@ -159,30 +161,31 @@ async def get_my_balances(
     )
     all_transfers = transfers_result.scalars().all()
 
-    # Net per group
-    group_net: dict[UUID, Decimal] = defaultdict(Decimal)
-    # Net per other user (pairwise)
-    user_net: dict[UUID, Decimal] = defaultdict(Decimal)
+    # Net per group — keyed by (group_id, currency)
+    group_net: dict[tuple[UUID, str], Decimal] = defaultdict(Decimal)
+    # Net per other user — keyed by (user_id, currency)
+    user_net: dict[tuple[UUID, str], Decimal] = defaultdict(Decimal)
 
     you_owe = Decimal("0")
     you_are_owed = Decimal("0")
 
     for transfer in all_transfers:
+        currency = transfer.currency
         if transfer.to_user_id == user_id:
-            group_net[transfer.group_id] += transfer.amount
-            user_net[transfer.from_user_id] += transfer.amount
+            group_net[(transfer.group_id, currency)] += transfer.amount
+            user_net[(transfer.from_user_id, currency)] += transfer.amount
         if transfer.from_user_id == user_id:
-            group_net[transfer.group_id] -= transfer.amount
-            user_net[transfer.to_user_id] -= transfer.amount
+            group_net[(transfer.group_id, currency)] -= transfer.amount
+            user_net[(transfer.to_user_id, currency)] -= transfer.amount
 
-    for gid, net in group_net.items():
+    for (gid, _currency), net in group_net.items():
         if net > Decimal("0"):
             you_are_owed += net
         else:
             you_owe += abs(net)
 
     # Fetch user display names for net_by_user
-    other_user_ids = set(user_net.keys())
+    other_user_ids = {uid for (uid, _) in user_net.keys()}
     user_display: dict[UUID, str] = {}
     if other_user_ids:
         users_result = await db.execute(
@@ -195,19 +198,20 @@ async def get_my_balances(
         {
             "groupId": str(gid),
             "groupName": group_name_map.get(gid, str(gid)),
-            "currency": group_currency_map.get(gid, "USD"),
+            "currency": currency,
             "netAmount": float(net.quantize(Decimal("0.01"))),
         }
-        for gid, net in group_net.items()
+        for (gid, currency), net in group_net.items()
     ]
 
     net_by_user: list[dict[str, Any]] = [
         {
             "userId": str(uid),
             "displayName": user_display.get(uid, str(uid)),
+            "currency": currency,
             "netAmount": float(net.quantize(Decimal("0.01"))),
         }
-        for uid, net in user_net.items()
+        for (uid, currency), net in user_net.items()
         if net != Decimal("0")
     ]
 
@@ -228,9 +232,15 @@ async def recalculate_group_balances(
     by re-deriving from expenses and settlements.
     """
     from app.models.expense import Expense, ExpensePayment, ExpenseSplit
+    from app.models.group import Group
     from app.models.settlement import Settlement
     from app.services.expenses import _build_transfers_for_expense
     from sqlalchemy import delete
+
+    # Get group default currency
+    group_result = await db.execute(select(Group).where(Group.id == group_id))
+    group = group_result.scalar_one()
+    group_default_currency = group.default_currency
 
     # Delete all existing transfers for this group
     await db.execute(
@@ -257,10 +267,12 @@ async def recalculate_group_balances(
         )
         splits = list(splits_result.scalars().all())
 
+        exchange_rate = expense.exchange_rate if expense.exchange_rate is not None else Decimal("1")
         transfers = await _build_transfers_for_expense(
             expense_id=expense.id,
             group_id=group_id,
-            currency=expense.currency,
+            transfer_currency=group_default_currency,
+            exchange_rate=exchange_rate,
             payments=payments,
             splits=splits,
         )

@@ -27,6 +27,7 @@ class Expense(Base):
     )
     description: Mapped[str] = mapped_column(String(500), nullable=False)
     currency: Mapped[str] = mapped_column(String(10), default="USD")
+    exchange_rate: Mapped[Decimal] = mapped_column(Numeric(14, 6), nullable=False, default=1)
     total_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     expense_date: Mapped[date] = mapped_column(Date, nullable=False)
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
