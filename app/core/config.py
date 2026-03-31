@@ -10,15 +10,15 @@ class Settings(BaseSettings):
     )
 
     # Database — individual params matching Supabase connection guide
-    db_user: str = "postgres"
-    db_password: str = ""
-    db_host: str = "localhost"
-    db_port: int = 5432
-    db_name: str = "postgres"
+    db_user: str
+    db_password: str
+    db_host: str
+    db_port: int
+    db_name: str
 
     # Clerk
-    CLERK_JWKS_URL: str = "https://your-clerk-domain.clerk.accounts.dev/.well-known/jwks.json"
-    CLERK_ISSUER: str = "https://your-clerk-domain.clerk.accounts.dev"
+    CLERK_JWKS_URL: str
+    CLERK_ISSUER: str
 
     # App
     CORS_ORIGINS: List[str] = ["*"]
