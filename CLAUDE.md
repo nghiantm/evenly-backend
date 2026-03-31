@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Git Workflow
+
+**Never push directly to `main`.** The branch is protected — all changes must go through a pull request, and the `test` CI check must pass before merging. Always push to a feature branch and open a PR.
+
 ## Commands
 
 ```bash
