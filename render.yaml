@@ -6,7 +6,15 @@ services:
     buildCommand: pip install -e ".[dev]" && alembic upgrade head
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
-      - key: DATABASE_URL
+      - key: USER
+        sync: false
+      - key: PASSWORD
+        sync: false
+      - key: HOST
+        sync: false
+      - key: PORT
+        sync: false
+      - key: DBNAME
         sync: false
       - key: CLERK_JWKS_URL
         sync: false
