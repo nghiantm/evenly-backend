@@ -28,9 +28,15 @@ class Settings(BaseSettings):
 
     @property
     def database_url(self) -> str:
-        if self.DATABASE_URL:
-            return self.DATABASE_URL
-        return f"postgresql+asyncpg://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
+        base = (
+            self.DATABASE_URL
+            or f"postgresql+asyncpg://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
+        )
+        # Required for Supabase transaction pooler (PgBouncer) compatibility
+        if "prepared_statement_cache_size" not in base:
+            separator = "&" if "?" in base else "?"
+            base = f"{base}{separator}prepared_statement_cache_size=0"
+        return base
 
 
 settings = Settings()
