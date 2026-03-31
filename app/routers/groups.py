@@ -19,6 +19,7 @@ from app.schemas.group import (
     GroupResponse,
     UpdateGroupRequest,
 )
+from app.services import balances as balance_service
 from app.services import groups as group_service
 from app.services import users as user_service
 
@@ -198,5 +199,14 @@ async def remove_member(
         raise HTTPException(
             status_code=403, detail="Only OWNER or ADMIN can remove other members"
         )
+
+    # Reject removal if the member has an unsettled balance
+    group_balances = await balance_service.get_group_balances(db, group_id)
+    for ub in group_balances.userBalances:
+        if ub.userId == user_id and abs(ub.netAmount) > 0.01:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot remove member with an unsettled balance. Please settle all debts first.",
+            )
 
     await group_service.remove_member(db, group_id, user_id)
