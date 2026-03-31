@@ -55,7 +55,9 @@ class ExpenseResponse(BaseModel):
     groupId: UUID
     description: str
     currency: str
+    exchangeRate: Decimal
     totalAmount: Decimal
+    convertedAmount: Decimal
     expenseDate: date
     note: Optional[str] = None
     createdBy: UUID
@@ -80,12 +82,15 @@ class ExpenseResponse(BaseModel):
             }
             for s in expense.splits
         ]
+        exchange_rate = expense.exchange_rate if expense.exchange_rate is not None else Decimal("1")
         return cls(
             expenseId=expense.id,
             groupId=expense.group_id,
             description=expense.description,
             currency=expense.currency,
+            exchangeRate=exchange_rate,
             totalAmount=expense.total_amount,
+            convertedAmount=(expense.total_amount * exchange_rate).quantize(Decimal("0.01")),
             expenseDate=expense.expense_date,
             note=expense.note,
             createdBy=expense.created_by,

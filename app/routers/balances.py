@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_current_user
@@ -16,13 +16,12 @@ router = APIRouter(tags=["balances"])
 @router.get("/groups/{group_id}/balances", response_model=GroupBalanceResponse)
 async def get_group_balances(
     group_id: UUID,
-    currency: str = Query("USD", description="Currency code to filter balances"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Get balance summary for all members in a group."""
     await group_service.assert_active_member(db, group_id, current_user.id)
-    return await balance_service.get_group_balances(db, group_id, currency=currency)
+    return await balance_service.get_group_balances(db, group_id)
 
 
 @router.get("/groups/{group_id}/balances/recalculate", status_code=204)

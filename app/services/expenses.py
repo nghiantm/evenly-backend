@@ -8,6 +8,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.fx import get_exchange_rate
 from app.models.expense import Expense, ExpensePayment, ExpenseSplit, GroupTransfer
 from app.models.group import GroupMember
 from app.models.user import User
@@ -17,13 +18,16 @@ from app.schemas.expense import CreateExpenseRequest, UpdateExpenseRequest
 async def _build_transfers_for_expense(
     expense_id: UUID,
     group_id: UUID,
-    currency: str,
+    transfer_currency: str,
+    exchange_rate: Decimal,
     payments: list[ExpensePayment],
     splits: list[ExpenseSplit],
 ) -> list[GroupTransfer]:
     """
     For each split, determine how much the split user owes to each payer.
     Uses proportional distribution when there are multiple payers.
+    Amounts are multiplied by exchange_rate and stored in transfer_currency
+    (the group's defaultCurrency).
     """
     transfers: list[GroupTransfer] = []
 
@@ -47,7 +51,7 @@ async def _build_transfers_for_expense(
 
             # Proportion of this payer's contribution
             payer_share = payment.amount / total_paid
-            transfer_amount = (amount_owed * payer_share).quantize(Decimal("0.01"))
+            transfer_amount = (amount_owed * payer_share * exchange_rate).quantize(Decimal("0.01"))
 
             if transfer_amount > Decimal("0"):
                 transfers.append(
@@ -56,7 +60,7 @@ async def _build_transfers_for_expense(
                         expense_id=expense_id,
                         from_user_id=split_user_id,
                         to_user_id=payer_id,
-                        currency=currency,
+                        currency=transfer_currency,
                         amount=transfer_amount,
                     )
                 )
@@ -69,6 +73,7 @@ async def create_expense(
     group_id: UUID,
     current_user: User,
     data: CreateExpenseRequest,
+    group_default_currency: str = "USD",
 ) -> Expense:
     # Validate payer amounts sum to totalAmount
     payer_total = sum(p.amount for p in data.paidBy)
@@ -105,12 +110,16 @@ async def create_expense(
             detail=f"Some users are not active members of the group: {[str(uid) for uid in missing]}",
         )
 
+    # Resolve exchange rate
+    exchange_rate = await get_exchange_rate(data.currency, group_default_currency)
+
     # Create expense
     expense = Expense(
         group_id=group_id,
         created_by=current_user.id,
         description=data.description,
         currency=data.currency,
+        exchange_rate=exchange_rate,
         total_amount=data.totalAmount,
         expense_date=data.expenseDate,
         note=data.note,
@@ -149,7 +158,8 @@ async def create_expense(
     transfers = await _build_transfers_for_expense(
         expense_id=expense.id,
         group_id=group_id,
-        currency=data.currency,
+        transfer_currency=group_default_currency,
+        exchange_rate=exchange_rate,
         payments=payment_objects,
         splits=split_objects,
     )
@@ -225,12 +235,15 @@ async def update_expense(
     db: AsyncSession,
     expense: Expense,
     data: UpdateExpenseRequest,
+    group_default_currency: str = "USD",
 ) -> Expense:
     # Update scalar fields
     if data.description is not None:
         expense.description = data.description
-    if data.currency is not None:
+    if data.currency is not None and data.currency != expense.currency:
+        # Currency changed — re-fetch exchange rate
         expense.currency = data.currency
+        expense.exchange_rate = await get_exchange_rate(data.currency, group_default_currency)
     if data.totalAmount is not None:
         expense.total_amount = data.totalAmount
     if data.expenseDate is not None:
@@ -312,7 +325,8 @@ async def update_expense(
         transfers = await _build_transfers_for_expense(
             expense_id=expense.id,
             group_id=expense.group_id,
-            currency=expense.currency,
+            transfer_currency=group_default_currency,
+            exchange_rate=expense.exchange_rate,
             payments=payment_objects,
             splits=split_objects,
         )

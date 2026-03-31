@@ -30,7 +30,13 @@ async def create_expense(
     if data.groupId != group_id:
         raise HTTPException(status_code=422, detail="groupId in body must match group_id in URL")
     await group_service.assert_active_member(db, group_id, current_user.id)
-    expense = await expense_service.create_expense(db, group_id, current_user, data)
+    group = await group_service.get_group(db, group_id)
+    if group is None:
+        raise HTTPException(status_code=404, detail="Group not found")
+    expense = await expense_service.create_expense(
+        db, group_id, current_user, data,
+        group_default_currency=group.default_currency,
+    )
     return ExpenseResponse.from_orm_model(expense)
 
 
@@ -93,7 +99,13 @@ async def update_expense(
             detail="Only the expense creator or group admin can update this expense",
         )
 
-    updated = await expense_service.update_expense(db, expense, data)
+    group = await group_service.get_group(db, group_id)
+    if group is None:
+        raise HTTPException(status_code=404, detail="Group not found")
+    updated = await expense_service.update_expense(
+        db, expense, data,
+        group_default_currency=group.default_currency,
+    )
     return ExpenseResponse.from_orm_model(updated)
 
 
