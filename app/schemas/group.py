@@ -27,6 +27,7 @@ class GroupMemberResponse(BaseModel):
     userId: UUID
     email: str
     displayName: str
+    avatarUrl: Optional[str] = None
     role: str
     joinedAt: datetime
 
@@ -36,6 +37,7 @@ class GroupMemberResponse(BaseModel):
             userId=member.user_id,
             email=member.user.email,
             displayName=member.user.display_name,
+            avatarUrl=member.user.avatar_url,
             role=member.role,
             joinedAt=member.joined_at,
         )
