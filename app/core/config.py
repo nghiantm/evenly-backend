@@ -10,11 +10,11 @@ class Settings(BaseSettings):
     )
 
     # Database — individual params matching Supabase connection guide
-    user: str = "postgres"
-    password: str = ""
-    host: str = "localhost"
-    port: int = 5432
-    dbname: str = "postgres"
+    db_user: str = "postgres"
+    db_password: str = ""
+    db_host: str = "localhost"
+    db_port: int = 5432
+    db_name: str = "postgres"
 
     # Clerk
     CLERK_JWKS_URL: str = "https://your-clerk-domain.clerk.accounts.dev/.well-known/jwks.json"
@@ -26,7 +26,7 @@ class Settings(BaseSettings):
 
     @property
     def DATABASE_URL(self) -> str:
-        return f"postgresql+asyncpg://{self.user}:{self.password}@{self.host}:{self.port}/{self.dbname}"
+        return f"postgresql+asyncpg://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
 
 
 settings = Settings()
