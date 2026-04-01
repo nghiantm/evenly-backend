@@ -2,6 +2,7 @@ from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
@@ -29,8 +30,22 @@ async def get_or_create_user(
             email_verified=email_verified,
         )
         db.add(user)
-        await db.commit()
-        await db.refresh(user)
+        try:
+            await db.commit()
+            await db.refresh(user)
+        except IntegrityError:
+            # Another row already owns this email (e.g. account re-created in Clerk).
+            # Roll back, fetch the existing row, and re-link it to the current subject.
+            await db.rollback()
+            result = await db.execute(select(User).where(User.email == email))
+            user = result.scalar_one()
+            user.external_subject = external_subject
+            user.email_verified = email_verified
+            if display_name:
+                user.display_name = display_name
+            await db.commit()
+            await db.refresh(user)
+        return user
     else:
         # Update mutable fields if they changed
         changed = False
