@@ -22,7 +22,10 @@ async def get_jwks() -> dict:
         async with httpx.AsyncClient() as client:
             resp = await client.get(settings.CLERK_JWKS_URL)
             resp.raise_for_status()
-            _jwks_cache["keys"] = resp.json()
+            if not resp.content:
+                raise HTTPException(status_code=503, detail="JWKS endpoint returned an empty response")
+            jwks = resp.json()
+            _jwks_cache["keys"] = jwks
             _jwks_cache["fetched_at"] = now
     return _jwks_cache["keys"]
 
