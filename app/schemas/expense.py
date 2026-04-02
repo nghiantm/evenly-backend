@@ -5,6 +5,23 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
+ALLOWED_CATEGORIES = {
+    "food & drink",
+    "groceries",
+    "transport",
+    "accommodation",
+    "entertainment",
+    "utilities",
+    "healthcare",
+    "shopping",
+    "travel",
+    "education",
+    "fitness & sports",
+    "personal care",
+    "fees & charges",
+    "other",
+}
+
 
 class ExpensePayerInput(BaseModel):
     userId: UUID
@@ -27,6 +44,12 @@ class ExpenseSplitInput(BaseModel):
         return v
 
 
+def _validate_category(v: Optional[str]) -> Optional[str]:
+    if v is not None and v not in ALLOWED_CATEGORIES:
+        raise ValueError(f"category must be one of {sorted(ALLOWED_CATEGORIES)}")
+    return v
+
+
 class CreateExpenseRequest(BaseModel):
     groupId: UUID
     description: str
@@ -34,8 +57,14 @@ class CreateExpenseRequest(BaseModel):
     totalAmount: Decimal
     expenseDate: date
     note: Optional[str] = None
+    category: Optional[str] = None
     paidBy: List[ExpensePayerInput]
     splits: List[ExpenseSplitInput]
+
+    @field_validator("category")
+    @classmethod
+    def validate_category(cls, v: Optional[str]) -> Optional[str]:
+        return _validate_category(v)
 
 
 class UpdateExpenseRequest(BaseModel):
@@ -44,8 +73,14 @@ class UpdateExpenseRequest(BaseModel):
     totalAmount: Optional[Decimal] = None
     expenseDate: Optional[date] = None
     note: Optional[str] = None
+    category: Optional[str] = None
     paidBy: Optional[List[ExpensePayerInput]] = None
     splits: Optional[List[ExpenseSplitInput]] = None
+
+    @field_validator("category")
+    @classmethod
+    def validate_category(cls, v: Optional[str]) -> Optional[str]:
+        return _validate_category(v)
 
 
 class ExpenseResponse(BaseModel):
@@ -60,6 +95,7 @@ class ExpenseResponse(BaseModel):
     convertedAmount: Decimal
     expenseDate: date
     note: Optional[str] = None
+    category: Optional[str] = None
     createdBy: UUID
     paidBy: List[Dict[str, Any]] = []
     splits: List[Dict[str, Any]] = []
@@ -93,6 +129,7 @@ class ExpenseResponse(BaseModel):
             convertedAmount=(expense.total_amount * exchange_rate).quantize(Decimal("0.01")),
             expenseDate=expense.expense_date,
             note=expense.note,
+            category=expense.category,
             createdBy=expense.created_by,
             paidBy=paid_by,
             splits=splits,
