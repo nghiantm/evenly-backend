@@ -72,11 +72,14 @@ async def get_current_user(
     # Import here to avoid circular imports
     from app.services.users import get_or_create_user
 
+    image_url: Optional[str] = claims.get("image_url") or None
+
     user = await get_or_create_user(
         db,
         external_subject=external_subject,
         email=email,
         display_name=display_name,
         email_verified=email_verified,
+        image_url=image_url,
     )
     return user

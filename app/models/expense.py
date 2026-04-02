@@ -31,6 +31,7 @@ class Expense(Base):
     total_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     expense_date: Mapped[date] = mapped_column(Date, nullable=False)
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    category: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

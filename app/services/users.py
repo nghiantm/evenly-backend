@@ -15,6 +15,7 @@ async def get_or_create_user(
     email: str,
     display_name: str,
     email_verified: bool,
+    image_url: Optional[str] = None,
 ) -> User:
     """Upsert a user by external_subject (Clerk sub claim)."""
     result = await db.execute(
@@ -28,6 +29,7 @@ async def get_or_create_user(
             email=email,
             display_name=display_name,
             email_verified=email_verified,
+            avatar_url=image_url,
         )
         db.add(user)
         try:
@@ -43,6 +45,8 @@ async def get_or_create_user(
             user.email_verified = email_verified
             if display_name:
                 user.display_name = display_name
+            if image_url and not user.avatar_url:
+                user.avatar_url = image_url
             await db.commit()
             await db.refresh(user)
         return user
@@ -57,6 +61,9 @@ async def get_or_create_user(
             changed = True
         if display_name and user.display_name != display_name:
             user.display_name = display_name
+            changed = True
+        if image_url and user.avatar_url != image_url:
+            user.avatar_url = image_url
             changed = True
         if changed:
             await db.commit()

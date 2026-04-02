@@ -123,6 +123,7 @@ async def create_expense(
         total_amount=data.totalAmount,
         expense_date=data.expenseDate,
         note=data.note,
+        category=data.category,
     )
     db.add(expense)
     await db.flush()  # get expense.id
@@ -250,6 +251,8 @@ async def update_expense(
         expense.expense_date = data.expenseDate
     if data.note is not None:
         expense.note = data.note
+    if data.category is not None:
+        expense.category = data.category
 
     # If payments or splits changed, rebuild everything atomically
     if data.paidBy is not None or data.splits is not None:
