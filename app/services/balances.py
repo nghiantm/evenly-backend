@@ -12,6 +12,50 @@ from app.models.user import User
 from app.schemas.balance import GroupBalanceResponse, MyBalancesResponse, PairwiseDebt, UserBalance
 
 
+def _simplify_debts(
+    net: dict[UUID, Decimal], currency: str
+) -> list[PairwiseDebt]:
+    """
+    Greedy debt simplification: reduce N*(N-1)/2 pairwise debts to at most N-1
+    transactions by matching the largest debtor against the largest creditor.
+    Sort by (amount, str(uid)) for a stable, deterministic tiebreaker.
+    """
+    creditors: list[list] = sorted(
+        [[uid, bal] for uid, bal in net.items() if bal > Decimal("0")],
+        key=lambda x: (x[1], str(x[0])),
+    )
+    debtors: list[list] = sorted(
+        [[uid, -bal] for uid, bal in net.items() if bal < Decimal("0")],
+        key=lambda x: (x[1], str(x[0])),
+    )
+
+    result: list[PairwiseDebt] = []
+
+    while creditors and debtors:
+        creditor_uid, credit = creditors[-1]
+        debtor_uid, debt = debtors[-1]
+
+        settled = min(credit, debt)
+        result.append(
+            PairwiseDebt(
+                fromUserId=debtor_uid,
+                toUserId=creditor_uid,
+                amount=settled.quantize(Decimal("0.01")),
+                currency=currency,
+            )
+        )
+
+        creditors[-1][1] -= settled
+        debtors[-1][1] -= settled
+
+        if creditors[-1][1] == Decimal("0"):
+            creditors.pop()
+        if debtors[-1][1] == Decimal("0"):
+            debtors.pop()
+
+    return result
+
+
 async def get_group_balances(
     db: AsyncSession,
     group_id: UUID,
@@ -63,8 +107,8 @@ async def get_group_balances(
         for uid in user_names
     ]
 
-    # Simplify pairwise: net out A->B and B->A
-    simplified_pairwise: dict[tuple[UUID, UUID], Decimal] = {}
+    # Net out direct A↔B pairs to get the baseline pairwise debts
+    netted_pairwise: dict[tuple[UUID, UUID], Decimal] = {}
     visited: set[tuple[UUID, UUID]] = set()
 
     for (from_uid, to_uid), amount in pairwise.items():
@@ -73,28 +117,36 @@ async def get_group_balances(
         reverse_amount = pairwise.get((to_uid, from_uid), Decimal("0"))
         net_amount = amount - reverse_amount
         if net_amount > Decimal("0"):
-            simplified_pairwise[(from_uid, to_uid)] = net_amount
+            netted_pairwise[(from_uid, to_uid)] = net_amount
         elif net_amount < Decimal("0"):
-            simplified_pairwise[(to_uid, from_uid)] = -net_amount
+            netted_pairwise[(to_uid, from_uid)] = -net_amount
         visited.add((from_uid, to_uid))
         visited.add((to_uid, from_uid))
 
-    pairwise_debts = [
-        PairwiseDebt(
-            fromUserId=from_uid,
-            toUserId=to_uid,
-            amount=amount.quantize(Decimal("0.01")),
-            currency=currency,
-        )
-        for (from_uid, to_uid), amount in simplified_pairwise.items()
-        if amount > Decimal("0")
-    ]
+    unsimplified_count = sum(1 for amt in netted_pairwise.values() if amt > Decimal("0"))
+
+    if group and group.simplify_debts:
+        pairwise_debts = _simplify_debts(net, currency)
+    else:
+        pairwise_debts = [
+            PairwiseDebt(
+                fromUserId=from_uid,
+                toUserId=to_uid,
+                amount=amount.quantize(Decimal("0.01")),
+                currency=currency,
+            )
+            for (from_uid, to_uid), amount in netted_pairwise.items()
+            if amount > Decimal("0")
+        ]
+
+    transactions_saved = unsimplified_count - len(pairwise_debts)
 
     return GroupBalanceResponse(
         groupId=group_id,
         currency=currency,
         userBalances=user_balances,
         pairwiseDebts=pairwise_debts,
+        transactionsSaved=transactions_saved,
     )
 
 

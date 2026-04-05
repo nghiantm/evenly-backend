@@ -23,6 +23,7 @@ class GroupBalanceResponse(BaseModel):
     currency: str
     userBalances: List[UserBalance]
     pairwiseDebts: List[PairwiseDebt]
+    transactionsSaved: int
 
 
 class MyBalancesResponse(BaseModel):
