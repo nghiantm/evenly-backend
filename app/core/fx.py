@@ -26,7 +26,7 @@ async def get_exchange_rate(from_currency: str, to_currency: str) -> Decimal:
         return cached["rate"]
 
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        async with httpx.AsyncClient(timeout=5.0, follow_redirects=True) as client:
             resp = await client.get(
                 "https://api.frankfurter.app/latest",
                 params={"from": from_currency, "to": to_currency},
