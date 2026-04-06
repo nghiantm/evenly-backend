@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.routers import health, users, groups, expenses, balances, settlements
+from app.routers import health, users, groups, expenses, balances, settlements, proxy
 
 app = FastAPI(
     title="Evenly API",
@@ -23,3 +23,4 @@ app.include_router(groups.router)
 app.include_router(expenses.router)
 app.include_router(balances.router)
 app.include_router(settlements.router)
+app.include_router(proxy.router)
